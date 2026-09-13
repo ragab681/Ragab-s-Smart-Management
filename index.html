@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#F4EEDD">
+<title>Ragab's Smart Management</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ============ AUTH OVERLAY (cloud login) ============ -->
+<div class="auth-overlay" id="authOverlay">
+  <div class="auth-box">
+    <div class="brand-mark auth-mark">R</div>
+    <h2>سجّل دخولك</h2>
+    <p class="auth-hint">عشان بياناتك تتحفظ على السحابة وتفضل معاك في أي جهاز</p>
+    <label class="field">
+      <span>الإيميل</span>
+      <input type="email" id="authEmail" placeholder="example@email.com" autocomplete="username">
+    </label>
+    <label class="field">
+      <span>كلمة المرور</span>
+      <input type="password" id="authPassword" placeholder="6 أحرف على الأقل" autocomplete="current-password">
+    </label>
+    <button class="btn btn-block" id="authSubmit">دخول / إنشاء حساب</button>
+    <p class="auth-error" id="authError" hidden></p>
+    <p class="auth-status" id="authStatus"></p>
+  </div>
+</div>
+
+<div class="app-shell">
+
+  <!-- ============ TOP BAR ============ -->
+  <header class="topbar">
+    <button class="icon-btn" id="backBtn" aria-label="رجوع" hidden>
+      <svg viewBox="0 0 24 24" width="22" height="22"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <div class="brand">
+      <span class="brand-mark">R</span>
+      <div class="brand-text">
+        <strong id="screenTitle">راجب</strong>
+        <small id="screenSubtitle">إدارة ذكية ليومك</small>
+      </div>
+    </div>
+    <button class="icon-btn" id="settingsBtn" aria-label="الإعدادات">
+      <svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 15.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M19.4 13.5a7.9 7.9 0 000-3l2-1.5-2-3.4-2.3.9a8 8 0 00-2.6-1.5L14 2h-4l-.5 2.5a8 8 0 00-2.6 1.5l-2.3-.9-2 3.4 2 1.5a7.9 7.9 0 000 3l-2 1.5 2 3.4 2.3-.9a8 8 0 002.6 1.5L10 22h4l.5-2.5a8 8 0 002.6-1.5l2.3.9 2-3.4-2-1.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+    </button>
+  </header>
+
+  <main id="screens">
+
+    <!-- ============ SCREEN 1: MONTHS ============ -->
+    <section class="screen" id="screen-months" data-title="اختر الشهر" data-subtitle="إدارة ذكية ليومك">
+      <p class="page-lead" id="monthsLead">افتح الشهر اللي عايز تنظّمه</p>
+      <div class="month-grid" id="monthGrid"></div>
+    </section>
+
+    <!-- ============ SCREEN 2: WEEKS ============ -->
+    <section class="screen" id="screen-weeks" data-title="" data-subtitle="اختر الأسبوع">
+      <div class="card month-summary-card" id="monthSummaryCard"></div>
+      <div class="week-list" id="weekList"></div>
+    </section>
+
+    <!-- ============ SCREEN 3: DAYS ============ -->
+    <section class="screen" id="screen-days" data-title="" data-subtitle="اختر اليوم">
+      <div class="card week-summary-card" id="weekSummaryCard"></div>
+      <div class="week-list" id="dayGrid"></div>
+    </section>
+
+    <!-- ============ SCREEN 4: DAY DETAIL ============ -->
+    <section class="screen" id="screen-day" data-title="" data-subtitle="">
+
+      <div class="yesterday-note" id="yesterdayNote" hidden>
+        <div class="ribbon-label">مهام حطّيتها من امبارح</div>
+        <p id="yesterdayNoteText"></p>
+      </div>
+
+      <div class="card lessons-card">
+        <div class="card-head">
+          <h2>دروسك النهاردة</h2>
+        </div>
+        <ul class="lesson-list" id="lessonList"></ul>
+      </div>
+
+      <div class="card timer-card">
+        <div class="card-head">
+          <h2>⏱️ وقت المذاكرة النهاردة</h2>
+        </div>
+        <div class="timer-display" id="timerDisplay">00:00:00</div>
+        <button class="btn btn-block" id="timerToggleBtn">ابدأ المذاكرة</button>
+      </div>
+
+      <div class="card meal-card" data-meal="breakfast">
+        <div class="card-head">
+          <h2>🌅 الفطار</h2>
+          <span class="meal-total" id="total-breakfast">0 سعرة</span>
+        </div>
+        <div class="detected-items" id="detected-breakfast"></div>
+        <div class="manual-add meal-form">
+          <input type="text" placeholder="اكتب مكونات وجبتك هنا..." class="manual-name" id="name-breakfast">
+          <input type="number" placeholder="السعرات الحرارية" class="manual-cal" id="cal-breakfast">
+          <button class="btn btn-block" data-manual-add="breakfast">حفظ الوجبة</button>
+        </div>
+      </div>
+
+      <div class="card meal-card" data-meal="lunch">
+        <div class="card-head">
+          <h2>🍲 الغداء</h2>
+          <span class="meal-total" id="total-lunch">0 سعرة</span>
+        </div>
+        <div class="detected-items" id="detected-lunch"></div>
+        <div class="manual-add meal-form">
+          <input type="text" placeholder="اكتب مكونات وجبتك هنا..." class="manual-name" id="name-lunch">
+          <input type="number" placeholder="السعرات الحرارية" class="manual-cal" id="cal-lunch">
+          <button class="btn btn-block" data-manual-add="lunch">حفظ الوجبة</button>
+        </div>
+      </div>
+
+      <div class="card meal-card" data-meal="dinner">
+        <div class="card-head">
+          <h2>🌙 العشاء</h2>
+          <span class="meal-total" id="total-dinner">0 سعرة</span>
+        </div>
+        <div class="detected-items" id="detected-dinner"></div>
+        <div class="manual-add meal-form">
+          <input type="text" placeholder="اكتب مكونات وجبتك هنا..." class="manual-name" id="name-dinner">
+          <input type="number" placeholder="السعرات الحرارية" class="manual-cal" id="cal-dinner">
+          <button class="btn btn-block" data-manual-add="dinner">حفظ الوجبة</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>ملخص السعرات اليومي</h2>
+          <span class="calorie-pill" id="remainingPill">متبقي --</span>
+        </div>
+        <div class="calorie-bar-track"><div class="calorie-bar-fill" id="calorieBarFill"></div></div>
+        <div class="summary-row">
+          <div class="summary-stat"><small>أكلت</small><strong id="eatenStat">0 سعرة</strong></div>
+          <div class="summary-stat"><small>المتبقي اليوم</small><strong id="remainingStat">-- سعرة</strong></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>إنجازاتك في المذاكرة النهاردة</h2></div>
+        <ul class="check-list" id="achievementsList"></ul>
+        <div class="manual-add">
+          <input type="text" placeholder="اكتب إنجاز جديد..." id="newAchievementInput">
+          <button class="btn btn-tiny" id="addAchievement">إضافة</button>
+        </div>
+      </div>
+
+      <div class="card tasks-card">
+        <div class="card-head"><h2>مهام بكرة</h2></div>
+        <textarea class="plain-input" id="tasksInput" placeholder="اكتب المهام اللي هتعملها بكرة..."></textarea>
+        <div class="save-row">
+          <span class="save-status" id="tasksStatus"></span>
+          <div class="task-buttons">
+            <button class="btn btn-outline" id="editTasks" hidden>تعديل</button>
+            <button class="btn btn-small" id="doneTasks">تم</button>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ============ SCREEN 5: SETTINGS ============ -->
+    <section class="screen" id="screen-settings" data-title="الإعدادات" data-subtitle="بياناتك ونظامك الغذائي">
+      <div class="card">
+        <h2>مصمم هذا التطبيق رجب شعبان </h2>
+        <div class="card-head"><h2>بياناتك</h2></div>
+        <label class="field">
+          <span>اسمك</span>
+          <input type="text" id="setName" placeholder="اكتب اسمك...">
+        </label>
+        <label class="field">
+          <span>الوزن الحالي (كجم)</span>
+          <input type="number" id="setWeight">
+        </label>
+        <label class="field">
+          <span>الطول (سم)</span>
+          <input type="number" id="setHeight">
+        </label>
+        <label class="field">
+          <span>العمر</span>
+          <input type="number" id="setAge">
+        </label>
+        <label class="field">
+          <span>النوع</span>
+          <select id="setGender">
+            <option value="male">ذكر</option>
+            <option value="female">أنثى</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>مستوى النشاط</span>
+          <select id="setActivity">
+            <option value="1.2">خمول (بدون رياضة)</option>
+            <option value="1.375">نشاط خفيف</option>
+            <option value="1.55" selected>نشاط معتدل</option>
+            <option value="1.725">نشاط عالي</option>
+            <option value="1.9">نشاط عالي جدًا</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>معدل الحرق الناقص يوميًا (عجز السعرات)</span>
+          <input type="number" id="setDeficit" value="500">
+        </label>
+        <div class="target-preview">
+          <span>هدفك اليومي المقترح</span>
+          <strong id="targetPreview">-- سعرة</strong>
+        </div>
+        <button class="btn btn-block" id="saveSettings">حفظ البيانات</button>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>الحساب والمزامنة</h2></div>
+        <p class="sync-status" id="syncStatus">--</p>
+        <button class="btn btn-outline btn-block" id="logoutBtn">تسجيل الخروج</button>
+      </div>
+
+      <p class="app-footer">تطوير: رجب شعبان — 01110374797</p>
+    </section>
+
+  </main>
+
+</div>
+
+<!-- ============ FLOATING STUDY TIMER ============ -->
+<div class="study-bar" id="studyBar" hidden>
+  <button class="study-bar-toggle" id="studyBarCollapse" aria-label="تصغير">
+    <svg viewBox="0 0 24 24" width="16" height="16"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
+  <div class="study-bar-info">
+    <span class="study-bar-dot"></span>
+    <span>بتذاكر...</span>
+    <span id="studyBarTime">00:00:00</span>
+  </div>
+  <button class="btn btn-small study-bar-stop" id="studyBarStop">إيقاف</button>
+</div>
+<button class="study-chip" id="studyChip" hidden aria-label="إظهار المؤقت">
+  ⏱️ <span id="studyChipTime">0 س 00 د</span>
+</button>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="firebase-init.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

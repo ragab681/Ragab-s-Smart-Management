@@ -8,7 +8,7 @@ const STORAGE_KEYS = { SETTINGS: 'ragab_settings', DAYS: 'ragab_days' };
 function loadSettings(){
   const raw = localStorage.getItem(STORAGE_KEYS.SETTINGS);
   if(raw) return Object.assign({ name:'' }, JSON.parse(raw));
-  return { name:'', weight:115, height:175, age:17, gender:'male', activity:1.55, deficit:500 };
+  return { name:'', weight:115, height:175, age:20, gender:'male', activity:1.55, deficit:500 };
 }
 function saveSettingsToStorage(s){
   localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(s));
@@ -38,6 +38,135 @@ function setDay(dateStr, data){
   days[dateStr] = data;
   saveAllDays(days);
   pushDayToCloud(dateStr, data);
+}
+
+/* ---------------- Study timer ----------------
+   A single start/stop stopwatch. It always attributes its running
+   time to the REAL current date (never to whatever day/week/month
+   screen the person happens to be browsing), so it can't get the
+   days mixed up. If it happens to be left running across midnight,
+   the time is split correctly between the two real calendar days. */
+const TIMER_KEY = 'ragab_timer_state';
+let timerInterval = null;
+
+function loadTimerState(){
+  const raw = localStorage.getItem(TIMER_KEY);
+  return raw ? JSON.parse(raw) : { running:false, startedAt:null, lastFlushAt:null };
+}
+function saveTimerState(t){ localStorage.setItem(TIMER_KEY, JSON.stringify(t)); }
+
+function todayKey(){
+  const n = new Date();
+  return dateKey(n.getFullYear(), n.getMonth(), n.getDate());
+}
+
+function addStudySeconds(dStr, seconds){
+  if(seconds <= 0) return;
+  const days = loadAllDays();
+  const d = days[dStr] || { breakfast:{cal:0,items:[]}, lunch:{cal:0,items:[]}, dinner:{cal:0,items:[]}, achievements:[], tasksTomorrow:'', tasksDone:false, studySeconds:0 };
+  d.studySeconds = (d.studySeconds||0) + seconds;
+  days[dStr] = d;
+  saveAllDays(days);
+  pushDayToCloud(dStr, d);
+}
+
+// Adds every elapsed second since the last flush into the real calendar
+// day(s) it belongs to, splitting cleanly at midnight if needed.
+function flushTimer(){
+  const t = loadTimerState();
+  if(!t.running) return;
+  const now = Date.now();
+  let cursor = t.lastFlushAt;
+  while(cursor < now){
+    const cd = new Date(cursor);
+    const key = dateKey(cd.getFullYear(), cd.getMonth(), cd.getDate());
+    const endOfDay = new Date(cd.getFullYear(), cd.getMonth(), cd.getDate(), 23,59,59,999).getTime();
+    const segmentEnd = Math.min(now, endOfDay);
+    const seconds = Math.floor((segmentEnd - cursor)/1000);
+    if(seconds > 0) addStudySeconds(key, seconds);
+    cursor = segmentEnd + 1;
+  }
+  t.lastFlushAt = now;
+  saveTimerState(t);
+}
+
+function formatDuration(totalSeconds){
+  const totalMinutes = Math.round((totalSeconds||0)/60);
+  const h = Math.floor(totalMinutes/60);
+  const m = totalMinutes % 60;
+  if(h === 0 && m === 0) return '0 دقيقة';
+  if(h === 0) return `${m} دقيقة`;
+  if(m === 0) return `${h} ساعة`;
+  return `${h} س ${m} د`;
+}
+function formatHMS(totalSeconds){
+  const h = Math.floor(totalSeconds/3600);
+  const m = Math.floor((totalSeconds%3600)/60);
+  const s = totalSeconds%60;
+  return `${pad(h)}:${pad(m)}:${pad(s)}`;
+}
+
+function renderTimerWidget(){
+  const btn = document.getElementById('studyTimerBtn');
+  if(!btn) return;
+  const t = loadTimerState();
+  if(t.running){
+    const elapsed = Math.floor((Date.now() - t.startedAt)/1000);
+    btn.classList.add('running');
+    btn.innerHTML = `<span class="timer-dot"></span> ${formatHMS(elapsed)} — إيقاف`;
+  } else {
+    btn.classList.remove('running');
+    btn.innerHTML = `⏱ ابدأ المذاكرة`;
+  }
+}
+
+function renderStudyDayTotal(){
+  const el = document.getElementById('studyDayTotal');
+  if(el && dayData) el.textContent = formatDuration(dayData.studySeconds||0);
+}
+
+function tickTimer(){
+  flushTimer();
+  renderTimerWidget();
+  // keep the open day screen live if it's showing today
+  if(state.screen === 'day' && state.dateStr === todayKey()){
+    dayData = getDay(state.dateStr);
+    renderStudyDayTotal();
+  }
+}
+
+function startTimer(){
+  const now = Date.now();
+  saveTimerState({ running:true, startedAt:now, lastFlushAt:now });
+  renderTimerWidget();
+  if(timerInterval) clearInterval(timerInterval);
+  timerInterval = setInterval(tickTimer, 1000);
+}
+function stopTimer(){
+  flushTimer();
+  saveTimerState({ running:false, startedAt:null, lastFlushAt:null });
+  if(timerInterval){ clearInterval(timerInterval); timerInterval = null; }
+  renderTimerWidget();
+  if(state.screen === 'day' && state.dateStr === todayKey()){
+    dayData = getDay(state.dateStr);
+    renderStudyDayTotal();
+  }
+}
+function toggleTimer(){
+  const t = loadTimerState();
+  if(t.running) stopTimer(); else startTimer();
+}
+
+function initStudyTimer(){
+  const btn = document.getElementById('studyTimerBtn');
+  if(!btn) return;
+  const t = loadTimerState();
+  if(t.running){
+    flushTimer(); // catch up on any time that passed while the app was closed
+    timerInterval = setInterval(tickTimer, 1000);
+  }
+  renderTimerWidget();
+  btn.addEventListener('click', toggleTimer);
 }
 
 /* ---------------- Cloud sync (Firebase) ---------------- */
@@ -173,126 +302,6 @@ auth.onAuthStateChanged(user=>{
   }
 });
 
-/* ---------------- Study timer ---------------- */
-const TIMER_KEY = 'ragab_timer';
-let timerInterval = null;
-let studyBarCollapsed = false;
-
-function currentDateKeyNow(){
-  const now = new Date();
-  return dateKey(now.getFullYear(), now.getMonth(), now.getDate());
-}
-function loadTimerState(){
-  const raw = localStorage.getItem(TIMER_KEY);
-  return raw ? JSON.parse(raw) : { running:false, startedAt:null, dateStr:null };
-}
-function saveTimerState(t){ localStorage.setItem(TIMER_KEY, JSON.stringify(t)); }
-
-// total seconds studied for a given day, including the live running session if it belongs to that day
-function getStudySecondsFor(dStr){
-  const dd = getDay(dStr);
-  let total = dd.studySeconds || 0;
-  const timer = loadTimerState();
-  if(timer.running && timer.dateStr === dStr){
-    total += Math.floor((Date.now() - timer.startedAt) / 1000);
-  }
-  return total;
-}
-
-function formatHMS(totalSeconds){
-  const h = Math.floor(totalSeconds/3600);
-  const m = Math.floor((totalSeconds%3600)/60);
-  const s = Math.floor(totalSeconds%60);
-  return `${pad(h)}:${pad(m)}:${pad(s)}`;
-}
-function formatHM(totalSeconds){
-  const h = Math.floor(totalSeconds/3600);
-  const m = Math.floor((totalSeconds%3600)/60);
-  return `${h} س ${pad(m)} د`;
-}
-
-function startStudyTimer(){
-  saveTimerState({ running:true, startedAt: Date.now(), dateStr: currentDateKeyNow() });
-  studyBarCollapsed = false;
-  startTimerTicker();
-  refreshTimerUI();
-}
-
-function stopStudyTimer(){
-  const timer = loadTimerState();
-  if(timer.running){
-    const elapsed = Math.floor((Date.now() - timer.startedAt) / 1000);
-    const dd = getDay(timer.dateStr);
-    dd.studySeconds = (dd.studySeconds || 0) + elapsed;
-    setDay(timer.dateStr, dd);
-  }
-  saveTimerState({ running:false, startedAt:null, dateStr:null });
-  stopTimerTicker();
-  refreshTimerUI();
-  if(state.screen === 'days') renderDays();
-  if(state.screen === 'weeks') renderWeeks();
-}
-
-function startTimerTicker(){
-  if(timerInterval) return;
-  timerInterval = setInterval(refreshTimerUI, 1000);
-}
-function stopTimerTicker(){
-  if(timerInterval){ clearInterval(timerInterval); timerInterval = null; }
-}
-
-function refreshTimerUI(){
-  const timer = loadTimerState();
-  const bar = document.getElementById('studyBar');
-  const chip = document.getElementById('studyChip');
-
-  if(!timer.running){
-    bar.hidden = true;
-    chip.hidden = true;
-    document.body.classList.remove('study-bar-active');
-    stopTimerTicker();
-  } else {
-    const seconds = getStudySecondsFor(timer.dateStr);
-    document.getElementById('studyBarTime').textContent = formatHMS(seconds);
-    document.getElementById('studyChipTime').textContent = formatHM(seconds);
-    bar.hidden = studyBarCollapsed;
-    chip.hidden = !studyBarCollapsed;
-    document.body.classList.toggle('study-bar-active', !studyBarCollapsed);
-  }
-
-  // keep the day-detail timer card in sync while it's on screen
-  if(state.screen === 'day'){
-    const timerDisplay = document.getElementById('timerDisplay');
-    const toggleBtn = document.getElementById('timerToggleBtn');
-    if(timerDisplay && toggleBtn){
-      timerDisplay.textContent = formatHMS(getStudySecondsFor(state.dateStr));
-      const isTodayScreen = state.dateStr === currentDateKeyNow();
-      toggleBtn.hidden = !isTodayScreen;
-      if(isTodayScreen){
-        const runningHere = timer.running && timer.dateStr === state.dateStr;
-        toggleBtn.textContent = runningHere ? 'إيقاف المذاكرة' : 'ابدأ المذاكرة';
-        toggleBtn.classList.toggle('btn-outline', runningHere);
-      }
-    }
-  }
-}
-
-document.getElementById('timerToggleBtn').addEventListener('click', ()=>{
-  const timer = loadTimerState();
-  const runningHere = timer.running && timer.dateStr === state.dateStr;
-  if(runningHere) stopStudyTimer();
-  else startStudyTimer();
-});
-document.getElementById('studyBarStop').addEventListener('click', stopStudyTimer);
-document.getElementById('studyBarCollapse').addEventListener('click', ()=>{
-  studyBarCollapsed = true;
-  refreshTimerUI();
-});
-document.getElementById('studyChip').addEventListener('click', ()=>{
-  studyBarCollapsed = false;
-  refreshTimerUI();
-});
-
 /* ---------------- Calorie target ---------------- */
 function computeTargetCalories(s){
   const bmr = s.gender === 'male'
@@ -305,7 +314,7 @@ function computeTargetCalories(s){
 
 /* ---------------- Arabic calendar data ---------------- */
 const MONTH_NAMES = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
-const DAY_NAMES = ['الجمعة','الخميس','الأربعاء','الثلاثاء','الاثنين','الأحد','السبت']; // 0..6 matches JS getDay()
+const DAY_NAMES = ['الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت']; // 0..6 matches JS getDay()
 
 function pad(n){ return String(n).padStart(2,'0'); }
 function dateKey(y,m,d){ return `${y}-${pad(m+1)}-${pad(d)}`; }
@@ -404,7 +413,7 @@ function getWeekRanges(y,m){
 }
 function renderWeeks(){
   setHeader(MONTH_NAMES[state.month], SCREEN_META.weeks.subtitle);
-  renderMonthSummary();
+  renderMonthSummary(state.year, state.month);
   const list = document.getElementById('weekList');
   list.innerHTML = '';
   const ranges = getWeekRanges(state.year, state.month);
@@ -434,39 +443,6 @@ function renderWeeks(){
   });
 }
 
-/* ---------------- Render: Month study summary ---------------- */
-function renderMonthSummary(){
-  const card = document.getElementById('monthSummaryCard');
-  const days = loadAllDays();
-  const prefix = `${state.year}-${pad(state.month+1)}-`;
-  let total = 0, studyDays = 0;
-  Object.keys(days).forEach(key=>{
-    if(!key.startsWith(prefix)) return;
-    const secs = getStudySecondsFor(key);
-    if(secs > 0){ total += secs; studyDays++; }
-  });
-  // also count today's live session if it falls in this month but has no saved record yet
-  const liveKey = currentDateKeyNow();
-  if(liveKey.startsWith(prefix) && !days[liveKey]){
-    const secs = getStudySecondsFor(liveKey);
-    if(secs > 0){ total += secs; studyDays++; }
-  }
-
-  if(total === 0){
-    card.innerHTML = `
-      <div class="card-head"><h2>⏱️ ملخص المذاكرة الشهري</h2></div>
-      <p class="week-summary-empty">لسه معملتش تسجيل مذاكرة الشهر ده</p>`;
-    return;
-  }
-  const avg = Math.round(total / studyDays);
-  card.innerHTML = `
-    <div class="card-head"><h2>⏱️ ملخص المذاكرة الشهري</h2></div>
-    <div class="summary-row">
-      <div class="summary-stat"><small>إجمالي الساعات</small><strong>${formatHM(total)}</strong></div>
-      <div class="summary-stat"><small>متوسط يوم المذاكرة</small><strong>${formatHM(avg)}</strong></div>
-    </div>`;
-}
-
 /* ---------------- Render: Days ---------------- */
 function renderDays(){
   const ranges = getWeekRanges(state.year, state.month);
@@ -484,15 +460,13 @@ function renderDays(){
     const dow = dateObj.getDay();
     const isToday = d === today.getDate() && state.month === today.getMonth() && state.year === today.getFullYear();
     const el = document.createElement('button');
-    el.className = 'week-card' + (isToday ? ' current' : '') + (dow === 5 ? ' friday' : '');
+    el.className = 'day-tile' + (isToday ? ' today' : '') + (dow === 5 ? ' friday' : '');
     el.innerHTML = `
       <div>
-        <div class="w-title">${DAY_NAMES[dow]}</div>
-        <div class="w-range">${d} ${MONTH_NAMES[state.month]}</div>
+        <div class="d-name">${DAY_NAMES[dow]}</div>
+        <div class="d-date">${d} ${MONTH_NAMES[state.month]}</div>
       </div>
-      <span class="w-arrow">
-        <svg viewBox="0 0 24 24" width="18" height="18"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </span>`;
+      <span class="d-badge">${d}</span>`;
     el.addEventListener('click', ()=>{
       state.dateStr = dateKey(state.year, state.month, d);
       goTo('day');
@@ -501,63 +475,76 @@ function renderDays(){
   }
 }
 
-/* ---------------- Render: Week calorie + study summary ---------------- */
+/* ---------------- Render: Week summary (calories + study) ---------------- */
 function renderWeekSummary(start, end){
   const card = document.getElementById('weekSummaryCard');
   const settings = loadSettings();
   const target = computeTargetCalories(settings);
   const days = loadAllDays();
 
-  let loggedDays = 0, totalEaten = 0;
-  let studyDays = 0, totalStudySeconds = 0;
+  let loggedDays = 0, totalEaten = 0, totalStudySeconds = 0;
   for(let d = start; d <= end; d++){
     const key = dateKey(state.year, state.month, d);
     const dd = days[key];
-    const dayEaten = dd ? (dd.breakfast?.cal||0) + (dd.lunch?.cal||0) + (dd.dinner?.cal||0) : 0;
-    if(dayEaten > 0){ loggedDays++; totalEaten += dayEaten; }
-
-    const daySeconds = getStudySecondsFor(key);
-    if(daySeconds > 0){ studyDays++; totalStudySeconds += daySeconds; }
+    if(!dd) continue;
+    totalStudySeconds += (dd.studySeconds || 0);
+    const dayEaten = (dd.breakfast?.cal||0) + (dd.lunch?.cal||0) + (dd.dinner?.cal||0);
+    if(dayEaten > 0){
+      loggedDays++;
+      totalEaten += dayEaten;
+    }
   }
 
-  let calorieHtml;
+  const studyRow = `
+    <div class="summary-row" style="margin-top:${loggedDays===0?'0':'12px'};">
+      <div class="summary-stat"><small>وقت المذاكرة</small><strong>${formatDuration(totalStudySeconds)}</strong></div>
+    </div>`;
+
   if(loggedDays === 0){
-    calorieHtml = `<p class="week-summary-empty">لسه معملتش تسجيل سعرات في أي يوم من الأسبوع ده</p>`;
-  } else {
-    const avg = Math.round(totalEaten / loggedDays);
-    const weeklyTarget = target * loggedDays;
-    const diff = weeklyTarget - totalEaten;
-    const diffLabel = diff >= 0 ? 'وفّرت' : 'تخطيت بـ';
-    const diffColor = diff >= 0 ? '' : 'color:var(--brick)';
-    calorieHtml = `
-      <div class="summary-row">
-        <div class="summary-stat"><small>مجموع السعرات</small><strong>${totalEaten} سعرة</strong></div>
-        <div class="summary-stat"><small>متوسط اليوم</small><strong>${avg} سعرة</strong></div>
-      </div>
-      <div class="summary-row" style="margin-top:12px;">
-        <div class="summary-stat"><small>أيام مسجّلة</small><strong>${loggedDays} من ${end-start+1}</strong></div>
-        <div class="summary-stat"><small>${diffLabel}</small><strong style="${diffColor}">${Math.abs(diff)} سعرة</strong></div>
-      </div>`;
+    card.innerHTML = `
+      <div class="card-head"><h2>ملخص الأسبوع</h2></div>
+      <p class="week-summary-empty">لسه معملتش تسجيل سعرات في أي يوم من الأسبوع ده</p>
+      ${studyRow}`;
+    return;
   }
 
-  let studyHtml;
-  if(totalStudySeconds === 0){
-    studyHtml = `<p class="week-summary-empty">لسه معملتش تسجيل مذاكرة الأسبوع ده</p>`;
-  } else {
-    const avgStudy = Math.round(totalStudySeconds / studyDays);
-    studyHtml = `
-      <div class="summary-row">
-        <div class="summary-stat"><small>إجمالي المذاكرة</small><strong>${formatHM(totalStudySeconds)}</strong></div>
-        <div class="summary-stat"><small>متوسط اليوم</small><strong>${formatHM(avgStudy)}</strong></div>
-      </div>`;
-  }
+  const avg = Math.round(totalEaten / loggedDays);
+  const weeklyTarget = target * loggedDays;
+  const diff = weeklyTarget - totalEaten;
+  const diffLabel = diff >= 0 ? 'وفّرت' : 'تخطيت بـ';
+  const diffColor = diff >= 0 ? '' : 'color:var(--brick)';
 
   card.innerHTML = `
-    <div class="card-head"><h2>ملخص سعرات الأسبوع</h2></div>
-    ${calorieHtml}
-    <div class="summary-divider"></div>
-    <h3 class="summary-subhead">⏱️ ملخص المذاكرة الأسبوعي</h3>
-    ${studyHtml}`;
+    <div class="card-head"><h2>ملخص الأسبوع</h2></div>
+    <div class="summary-row">
+      <div class="summary-stat"><small>مجموع السعرات</small><strong>${totalEaten} سعرة</strong></div>
+      <div class="summary-stat"><small>متوسط اليوم</small><strong>${avg} سعرة</strong></div>
+    </div>
+    <div class="summary-row" style="margin-top:12px;">
+      <div class="summary-stat"><small>أيام مسجّلة</small><strong>${loggedDays} من ${end-start+1}</strong></div>
+      <div class="summary-stat"><small>${diffLabel}</small><strong style="${diffColor}">${Math.abs(diff)} سعرة</strong></div>
+    </div>
+    ${studyRow}`;
+}
+
+/* ---------------- Render: Month study summary ---------------- */
+function renderMonthSummary(y, m){
+  const card = document.getElementById('monthSummaryCard');
+  if(!card) return;
+  const days = loadAllDays();
+  const prefix = `${y}-${pad(m+1)}-`;
+  let totalStudySeconds = 0, studyDays = 0;
+  Object.keys(days).forEach(key=>{
+    if(!key.startsWith(prefix)) return;
+    const sec = days[key].studySeconds || 0;
+    if(sec > 0){ totalStudySeconds += sec; studyDays++; }
+  });
+  card.innerHTML = `
+    <div class="card-head"><h2>مذاكرة ${MONTH_NAMES[m]}</h2></div>
+    <div class="summary-row">
+      <div class="summary-stat"><small>إجمالي وقت المذاكرة</small><strong>${formatDuration(totalStudySeconds)}</strong></div>
+      <div class="summary-stat"><small>أيام ذاكرت فيها</small><strong>${studyDays}</strong></div>
+    </div>`;
 }
 
 /* ---------------- Render: Day detail ---------------- */
@@ -570,6 +557,7 @@ function renderDayDetail(){
   setHeader(`${DAY_NAMES[dow]}`, `${d} ${MONTH_NAMES[m-1]} ${y}`);
 
   dayData = getDay(state.dateStr);
+  renderStudyDayTotal();
 
   // yesterday's tasks note
   const prevDate = new Date(y, m-1, d-1);
@@ -622,7 +610,6 @@ function renderDayDetail(){
   }
 
   updateCalorieSummary();
-  refreshTimerUI();
 }
 
 function renderMealTotals(meal){
@@ -799,7 +786,5 @@ function renderScreen(screen){
 function startApp(){
   document.getElementById('screen-months').classList.add('active');
   renderMonths();
-  const timer = loadTimerState();
-  if(timer.running) startTimerTicker();
-  refreshTimerUI();
+  initStudyTimer();
 }
